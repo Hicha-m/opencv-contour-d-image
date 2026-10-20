@@ -1,0 +1,30 @@
+# Compilation CMake et exécutables
+/build/
+/cmake-build-*/
+*.o
+*.obj
+
+# Fichiers temporaires Python et éditeurs
+__pycache__/
+*.py[cod]
+.venv/
+*.swp
+*~
+.DS_Store
+
+# Fichiers intermédiaires LaTeX ; le PDF du rapport reste versionné
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Anciens résultats dupliqués ; garder les trois dossiers par méthode
+/resultats/
+/resultats_check/
+
+# Vue PNG/HTML reproductible avec comparer_lot.py
+/comparaison/
+.*

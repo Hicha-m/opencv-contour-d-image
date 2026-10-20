@@ -1,0 +1,194 @@
+% Rapport suivant CONSIGNE.md. Les tableaux proviennent des CSV du programme.
+% Compiler depuis la racine : python3 compiler_rapport.py
+\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,booktabs,graphicx,geometry,listings,hyperref,float}
+\geometry{margin=2.1cm}
+\graphicspath{{../figures/}}
+\hypersetup{hidelinks}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible}
+\title{TP : comparaison de Sobel, Laplace et Canny}
+\author{}\date{20 octobre 2026}
+\begin{document}\maketitle
+
+\section{Objectif et protocole}
+Nous suivons les consignes de \texttt{CONSIGNE.md} et comparons trois détecteurs
+sur les 40 images PGM en niveaux de gris,
+avec leur référence \texttt{nom\_gt\_binary.pgm}. Les références représentent
+les contours en noir sur fond blanc, les sorties en blanc sur fond noir.
+Le code est en C++17 ; les résultats ont été recalculés avec OpenCV 4.11.0.
+La base est celle indiquée par la consigne :
+\url{https://www.cs.rug.nl/~imaging/databases/contour_database/contour_database.html}.
+Les annotations manuelles ne représentent pas nécessairement toutes les textures.
+
+Le protocole principal utilise un noyau 3 et les seuils Sobel 100, Laplace 30,
+Canny 50/150. Les seuils ne sont pas directement comparables entre méthodes,
+car les réponses numériques diffèrent. Une seconde expérience les fait varier
+sur le même lot ; elle ne constitue pas une optimisation exhaustive ni une
+validation sur un jeu indépendant.
+
+\section{Théorie et fonctions OpenCV}
+\subsection{Sobel : dérivées premières}
+Sobel approxime les dérivées $G_x$ et $G_y$ par convolution. Pour un noyau 3,
+$K_x=\left(\begin{smallmatrix}-1&0&1\\-2&0&2\\-1&0&1\end{smallmatrix}\right)$,
+$K_y=K_x^T$. \texttt{cv::Sobel(image,Gx,CV\_32F,1,0,kernel)} calcule la dérivée
+horizontale ; les ordres $(0,1)$ donnent la dérivée verticale.
+\texttt{CV\_32F} conserve les valeurs signées sans saturation en 8 bits.
+\texttt{cv::magnitude} calcule $M=\sqrt{G_x^2+G_y^2}$, puis
+\texttt{cv::compare(M,seuil,edges,CMP\_GE)} garde $M\geq seuil$.
+Sans suppression des non-maxima, les contours peuvent être épais.
+Un seuil nul sélectionne même les réponses nulles.
+
+\subsection{Laplace : dérivée seconde}
+Le Laplacien approxime $L=\partial^2I/\partial x^2+\partial^2I/\partial y^2$.
+\texttt{cv::Laplacian(image,L,CV\_32F,kernel)} calcule la réponse signée ;
+\texttt{cv::absdiff(L,0,A)} donne $|L|$ et \texttt{cv::compare} la seuille.
+La valeur absolue conserve les deux signes des changements de contraste.
+Cette variante ne cherche pas les passages par zéro. Elle peut donner des
+réponses épaisses ou doubles et réagit aux variations locales et au bruit.
+Un faible seuil retient aussi beaucoup de textures.
+
+\subsection{Canny : amincissement et hystérésis}
+Canny estime le gradient et son orientation, supprime les réponses non maximales
+et applique une hystérésis. Les réponses dépassant le seuil haut amorcent les
+contours ; les plus faibles sont conservées si elles dépassent le seuil bas
+et sont reliées à ces contours.
+\texttt{cv::Canny(image,edges,bas,haut,kernel)} applique cette procédure.
+Le noyau règle l'ouverture du filtre de Sobel : 3, 5 ou 7.
+\texttt{L2gradient} reste à \texttt{false}, donc la norme est $|G_x|+|G_y|$,
+alors que notre Sobel utilise L2.
+La théorie de Canny inclut souvent un lissage gaussien préalable.
+Notre chaîne appelle directement Canny sans \texttt{GaussianBlur} : aucun
+préfiltrage gaussien explicite n'est ajouté. Un grand noyau de dérivation
+n'est pas un réglage de sigma gaussien.
+
+Sobel/Laplace acceptent les noyaux 1, 3, 5, 7. Leur taille change le voisinage
+et l'amplitude des dérivées : le seuil doit être réajusté. Il porte sur des
+réponses non normalisées, pas sur les intensités 0--255.
+Le seuillage produit un masque binaire 8 bits pour le comptage et la sauvegarde.
+
+\section{Code et utilisation}
+\texttt{main.cpp} contient paramètres, détecteurs, mesures, batch et interface.
+\texttt{ContourMatching.h} isole l'association des pixels et
+\texttt{RadioControls.h} dessine les boutons radio et traite les clics. Le flux est :
+chargement en gris, détection, association à la référence, comptage, ratios,
+sauvegarde. Les commandes sont :
+\begin{lstlisting}
+cmake -S . -B build
+cmake --build build -j2
+./build/tp_contours --interactive images/bear.pgm
+./build/tp_contours --batch images images/gt resultats_sobel sobel 100 150 3
+./build/tp_contours --batch images images/gt resultats_laplace laplace 30 150 3
+./build/tp_contours --batch images images/gt resultats_canny canny 50 150 3
+\end{lstlisting}
+Les boutons radio choisissent méthode, noyau 3/5/7 et échelle 1/10/100/1000.
+Les deux seuils numériques conservent leurs trackbars.
+Le seuil effectif est la position du curseur (0--2000) fois l'échelle : on peut
+explorer de grands noyaux en conservant la précision des petits seuils.
+Le second seuil est inactif pour Sobel/Laplace. Les seuils Canny de l'interface
+sont triés et le bandeau affiche les valeurs réellement appliquées.
+Échap, q ou fermer la fenêtre termine l'interface.
+
+Le mode batch applique les mêmes paramètres à chaque image du lot.
+Il associe chaque image à sa référence et sauvegarde ses contours.
+Le CSV exporte les paramètres, les cinq comptes et les trois mesures par image.
+
+\section{Évaluation avec voisinage 3\texorpdfstring{$\times$}{x}3}
+\texttt{threshold} binarise les sorties et inverse les références ;
+\texttt{countNonZero} compte leurs pixels. Soient $D$ les contours détectés,
+$R$ les références et $C$ les paires valides. Une paire relie deux pixels distants
+d'au plus un pixel dans chaque direction, diagonales incluses. Chaque pixel
+n'est utilisé qu'une fois. Les cinq grandeurs sont :
+\[D,\quad R,\quad C,\quad FP=D-C,\quad FN=R-C.\]
+Avec $T=C+FP+FN$, les ratios demandés sont :
+\[P=C/T,\qquad TFP=FP/T,\qquad TFN=FN/T.\]
+Pour $T>0$, leur somme est 1. Si les deux masques sont vides, les trois ratios
+valent 0 par convention, pour éviter une division par zéro.
+TFP n'est pas le taux classique $FP/(FP+TN)$ : on suit la consigne.
+
+\paragraph{Association maximale, sans double compte.}
+Avec D1=(1,0), D2=(0,1), R1=(0,0), R2=(2,0), D1 peut utiliser R1 ou R2,
+mais D2 ne peut utiliser que R1. Réserver R1 définitivement à D1 donne une seule
+paire ; déplacer D1 vers R2 en donne deux.
+Le programme commence par les pixels superposés. Pour chaque détection restante,
+il cherche une référence dans son voisinage 3$\times$3. Si cette référence est
+déjà prise, il cherche à déplacer la paire existante vers une autre place libre.
+Cela permet de conserver le plus de correspondances possible, sans réutiliser
+un pixel. Un contour épais ne peut donc pas être compté plusieurs fois comme
+correct autour d'un seul pixel de référence.
+
+Le voisinage tolère une petite erreur de localisation mais peut la masquer.
+L'unicité pénalise les contours épais. Les ratios ne mesurent ni la continuité
+ni la pertinence sémantique. Les moyennes suivantes donnent le même poids à
+chaque image : ce ne sont pas des ratios de comptes cumulés.
+
+\section{Résultats et interprétation}
+\subsection{Réglages principaux}
+Les cinq comptes suivants sont les sommes sur les 40 images : D (détectés),
+R (référence), C (corrects), FP (faux positifs), FN (faux négatifs).
+\begin{center}\small\input{tableaux/tableau_comptes.tex}\end{center}
+Les trois ratios ci-dessous sont calculés par image puis moyennés.
+\begin{center}\input{tableaux/tableau_principal.tex}\end{center}
+Canny est légèrement premier pour P (0,147293), devant Sobel (0,142958).
+L'écart est faible ; ce classement concerne uniquement les images et les réglages utilisés.
+Sobel a un TFP un peu plus faible. Laplace a le TFN le plus faible, mais son
+TFP très élevé montre de nombreuses réponses étrangères aux références.
+Ces chiffres ont été recalculés avec le programme livré.
+
+\subsection{Variation des seuils, noyau 3}
+\begin{center}\input{tableaux/tableau_variation.tex}\end{center}
+Dans les trois séries, augmenter les seuils réduit le TFP et augmente le TFN :
+on élimine des réponses parasites mais aussi des contours faibles.
+Sobel passe de P=0,069296 à 0,210627 entre 50 et 200, avec un TFN final de 0,358415.
+Canny passe de 0,100503 à 0,232391 entre 25/75 et 100/300, avec un TFN de 0,221856.
+Parmi ces neuf réglages, Canny 100/300 a le meilleur P moyen, sans être un optimum
+universel. Le résultat moyen ne garantit pas une silhouette complète sur chaque image.
+
+\clearpage\subsection{Illustrations commentées}
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{bear_comparaison.png}
+\caption{Ours : source, référence et sorties, noyau 3.}\end{figure}
+Dans \texttt{bear}, l'herbe et l'eau produisent beaucoup de contours absents de
+la référence. Laplace 30 remplit ces zones ; Sobel 100 conserve aussi des réponses
+épaisses. Canny amincit les réponses mais conserve des textures. Un faux positif
+selon l'annotation ne signifie pas une absence de contraste réel.
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{bear_seuils.png}
+\caption{Même ours, trois couples de seuils Canny.}\end{figure}
+Avec 100/300, les textures diminuent mais la silhouette de l'ours est fragmentée.
+La hausse du P moyen sur le lot ne suffit donc pas à choisir un réglage par image.
+
+\clearpage
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{elephants_comparaison.png}
+\caption{Éléphants : silhouettes contrastées et nuages.}\end{figure}
+Les silhouettes ressortent bien : Sobel les épaissit, Canny les dessine plus
+finement, Laplace ajoute des réponses dans le ciel. Certains nuages figurent
+dans la référence : supprimer tout l'arrière-plan ne serait pas un objectif correct.
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\textwidth]{tiger_comparaison.png}
+\caption{Tigre : pelage, sol et tronc.}\end{figure}
+Le pelage produit des détails seulement partiellement annotés ; les textures du
+sol et du tronc augmentent les faux positifs. Il faut examiner aussi la
+localisation et les détails, pas seulement le nombre de pixels détectés.
+
+\section{Bilan de la comparaison}
+Avec les réglages principaux, Canny obtient la meilleure performance moyenne,
+juste devant Sobel. Laplace retrouve davantage de pixels de référence mais
+ajoute beaucoup de faux positifs. Augmenter les seuils retire des textures,
+mais fait aussi disparaître des contours utiles.
+
+Le voisinage 3$\times$3 accepte un petit décalage : c'est utile pour comparer
+les détecteurs à un tracé manuel, mais cela rend les mesures moins sensibles
+aux erreurs de localisation. L'association unique évite de favoriser les
+contours épais. En revanche, les mesures n'indiquent pas si une silhouette
+est continue. Les références ne contiennent pas tous les détails visibles.
+Le choix des paramètres repose donc sur les mesures et sur les images.
+
+\paragraph{Sources.}\begin{sloppypar} Chapitre 6 de \texttt{OpenCV3Cookbook},
+\href{https://docs.opencv.org/4.11.0/d4/d86/group__imgproc__filter.html}{documentation de Sobel et Laplace},
+\href{https://docs.opencv.org/4.11.0/dd/d1a/group__imgproc__feature.html}{documentation officielle de Canny},
+\href{https://github.com/opencv/opencv/blob/4.11.0/modules/imgproc/src/canny.cpp}{implémentation OpenCV 4.11.0}.\end{sloppypar}
+\end{document}
