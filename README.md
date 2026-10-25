@@ -2,8 +2,6 @@
 
 Programme C++ qui compare **Sobel, Laplace et Canny**, suivant les consignes de [CONSIGNE.md](CONSIGNE.md). Il permet de régler les paramètres dans une fenêtre et de calculer les mesures sur un lot de 40 images avec leurs références.
 
-https://youtu.be/ftkof2dyRAE 
-
 ![Comparaison des trois détecteurs sur l’ours](figures/bear_comparaison.png)
 
 ## Video
