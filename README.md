@@ -8,7 +8,7 @@ https://youtu.be/ftkof2dyRAE
 
 ## Video
 
-[Regarder la video sur YouTube](https://youtu.be/fuUNtIMqqgY).
+[Regarder la video sur YouTube](https://youtu.be/ftkof2dyRAE).
 
 ## Prérequis
 
