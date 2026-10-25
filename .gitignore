@@ -29,6 +29,3 @@ __pycache__/
 /comparaison/
 .*
 
-# Rapport conservé uniquement en local
-/rapport/rapport.pdf
-/rapport/rapport.tex
